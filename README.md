@@ -23,7 +23,7 @@ Under projects, add:
 ```
     - name: safebuffer
       remote: safebuffer
-      revision: V1.0.0
+      revision: V1.0.1
       path: modules/lib/safebuffer
 ```
 
@@ -38,5 +38,7 @@ C:\ncs\v2.9.0\modules\lib\safebuffer
 
 Add the following to your CMakeLists.txt file:
 ```
-zephyr_include_directories($ENV{ZEPHYR_BASE}/../modules/lib/safebuffer)
+set(SAFEBUFFER_SRC ${ZEPHYR_BASE}/../modules/lib/safebuffer)
+add_subdirectory(${SAFEBUFFER_SRC} ${CMAKE_BINARY_DIR}/safebuffer_build)
+include_directories(${SAFEBUFFER_SRC}/include)
 ```
