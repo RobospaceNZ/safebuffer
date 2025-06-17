@@ -1,0 +1,6 @@
+tests:
+  safebuffer.test:
+    platform_allow: nrf52840dk/nrf52840
+    tags: safebuffer
+    harness: ztest
+    timeout: 300
