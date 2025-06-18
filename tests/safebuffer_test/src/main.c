@@ -41,4 +41,27 @@ ZTEST(safebuffer, test_safebuffer_add_data)
     zassert_equal(safebuffer_free(sb), 0, "Freeing safebuffer should succeed");
 }
 
+ZTEST(safebuffer, test_safebuffer_add_safebuffer)
+{
+    safebuffer_t *sb1, *sb2;
+    sb1 = safebuffer_malloc(10);
+    zassert_not_null(sb1, "Failed to allocate safebuffer 1");
+    sb2 = safebuffer_malloc(5);
+    zassert_not_null(sb2, "Failed to allocate safebuffer 2");
+
+    zassert_equal(safebuffer_add_char(sb1, 'A'), 0, "Add char to sb1 should succeed");
+    zassert_equal(safebuffer_add_char(sb2, 'B'), 0, "Add char to sb2 should succeed");
+
+    zassert_equal(safebuffer_add_safebuffer(sb1, sb2), 0, "Add sb2 to sb1 should succeed");
+    zassert_equal(sb1->write_index, 2, "Write index of sb1 should be 2 after adding sb2");
+    zassert_false(sb1->full, "Buffer sb1 should not be full after adding sb2");
+    zassert_false(sb1->overflow, "Buffer sb1 should not have overflow after adding sb2");
+
+    zassert_equal(safebuffer_get_data_left_count(sb1), 8, "Data left in sb1 should be 8 after adding sb2");
+    zassert_equal(safebuffer_get_data_left_count(sb2), 4, "Data left in sb2 should be 4");
+
+    zassert_equal(safebuffer_free(sb1), 0, "Freeing safebuffer 1 should succeed");
+    zassert_equal(safebuffer_free(sb2), 0, "Freeing safebuffer 2 should succeed");
+}
+
 ZTEST_SUITE(safebuffer, NULL, NULL, NULL, NULL, NULL);
