@@ -128,7 +128,7 @@ int safebuffer_add_string(safebuffer_t *safebuffer, uint8_t *p_str) {
     }
 }
 
-// Add character to a safe buffer. Return true if character could be added
+// Add character to a safe buffer. Return 0 if character could be added
 int safebuffer_add_char(safebuffer_t *safebuffer, uint8_t c) {
     uint32_t size_left;
     bool all_data_added = true;
