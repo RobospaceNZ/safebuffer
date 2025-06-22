@@ -172,7 +172,7 @@ int safebuffer_snprintf(safebuffer_t *safebuffer, const char* msg, ...) {
     if (safebuffer == NULL) {
         return -EFAULT;
     }
-    size_left = safebuffer->len - safebuffer->write_index - 1;      // Minus one for terminating zero
+    size_left = safebuffer->len - safebuffer->write_index;
     va_start (args, msg);
     c = (char*)&safebuffer->buf[safebuffer->write_index];
     wsize = vsnprintf(c, size_left, msg, args);
