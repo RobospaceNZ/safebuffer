@@ -61,7 +61,7 @@ int safebuffer_init_const(safebuffer_t *safebuffer, const uint8_t *buf, uint32_t
     return 0;
 }
 
-// Add data to a safe buffer. Return true if all data could be added
+// Add data to a safe buffer. Return 0 if all data could be added
 int safebuffer_add_data(safebuffer_t *safebuffer, uint8_t *data, uint32_t len)
 {
     uint32_t size_left;
