@@ -167,6 +167,7 @@ int safebuffer_snprintf(safebuffer_t *safebuffer, const char* msg, ...) {
     int32_t wsize;
     char *c;
     uint32_t size_left = 0;
+    int error = 0;
 
     if (safebuffer == NULL) {
         return -EFAULT;
@@ -181,6 +182,7 @@ int safebuffer_snprintf(safebuffer_t *safebuffer, const char* msg, ...) {
         safebuffer->write_index = safebuffer->len;
         safebuffer->overflow = true;
         safebuffer->full = true;
+        error = -ENOMEM;
     } else if (wsize == size_left) {
         // Buffer was exactly the correct size
         safebuffer->write_index = safebuffer->len;
@@ -192,7 +194,7 @@ int safebuffer_snprintf(safebuffer_t *safebuffer, const char* msg, ...) {
         safebuffer->overflow = false;
         safebuffer->full = false;
     }
-    return 0;
+    return error;
 }
 
 // Read a character from a safe buffer if available
