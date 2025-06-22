@@ -40,8 +40,6 @@ int safebuffer_init(safebuffer_t *safebuffer, uint8_t *buf, uint32_t len) {
     safebuffer->overflow = false;
     safebuffer->write_index = 0;
     safebuffer->read_index = 0;
-    safebuffer->datatype = '-';
-    safebuffer->p_processed = NULL;
     return 0;
 }
 
@@ -60,8 +58,6 @@ int safebuffer_init_const(safebuffer_t *safebuffer, const uint8_t *buf, uint32_t
     safebuffer->overflow = false;
     safebuffer->write_index = len;
     safebuffer->read_index = 0;
-    safebuffer->datatype = '-';
-    safebuffer->p_processed = NULL;
     return 0;
 }
 
@@ -221,23 +217,7 @@ int safebuffer_reset(safebuffer_t *safebuffer) {
     safebuffer->overflow = false;
     safebuffer->write_index = 0;
     safebuffer->read_index = 0;
-    if (safebuffer->p_processed != NULL) {
-        *safebuffer->p_processed = false;
-    }
     return 0;
-}
-
-// If the pointer to the processed value is not NULL it is set to the value passed in
-int safebuffer_set_processed(safebuffer_t *safebuffer, bool processed) {
-    if (safebuffer == NULL) {
-        return -EFAULT;
-    }
-    if (safebuffer->p_processed != NULL) {
-        *safebuffer->p_processed = processed;
-        return 0;
-    } else {
-        return -EINVAL;
-    }
 }
 
 safebuffer_t *safebuffer_malloc(uint32_t len) {

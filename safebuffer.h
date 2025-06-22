@@ -31,15 +31,11 @@
 typedef struct
 {
   uint8_t *buf;                 // Pointer to the start of the buffer
-  uint8_t *p_gp;                // Another pointer that can be passed with the data structure for the user's needs
   uint32_t len;                 // Length of the buffer
   uint32_t write_index;         // Points to the end of the data currently in buffer
   uint32_t read_index;          // This can be used by the user for reading from the buffer
-  uint32_t value;               // General purpose value
   bool full;                    // True if the buffer is full
   bool overflow;                // True if data written to the buffer was lost
-  uint8_t  datatype;            // Optional field for user
-  volatile bool *p_processed;   // Pointer to user field, if buffer is sent to another task then this field can be cleared when the other task is finished with the buffer
 }
 safebuffer_t;
 
@@ -53,7 +49,6 @@ uint32_t safebuffer_get_data_left_count(safebuffer_t *safebuffer);
 int safebuffer_snprintf(safebuffer_t *safebuffer, const char* msg, ...);
 int safebuffer_read_char(safebuffer_t *safebuffer, uint8_t *c);
 int safebuffer_reset(safebuffer_t *safebuffer);
-int safebuffer_set_processed(safebuffer_t *safebuffer, bool processed);
 safebuffer_t *safebuffer_malloc(uint32_t len);
 int safebuffer_free(safebuffer_t *safebuffer);
 
