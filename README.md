@@ -4,6 +4,24 @@
 
 Safe buffer uses a data structure to manage a buffer and if the functions are used then the buffer cannot be overflowed.
 
+### How to use
+
+If the safebuffer structure is instantiated on the stack then the user needs to supply a buffer. For example:
+
+uint8_t buffer[10];
+safebuffer_t sb;
+safebuffer_init(&sb, buffer, sizeof(buffer));
+
+When you need to use an existing safebuffer for something new, then call:
+safebuffer_reset(&sb);
+
+You can also instantiate a safebuffer on the heap:
+safebuffer_t *sb = safebuffer_malloc(10);
+
+In this case you must call:
+safebuffer_free(sb);
+Don't use k_free(sb);
+
 ## Import into Zephyr
 
 This code can be cloned as part of the user's code, but can also be cloned into your Zephyr library. The advantage of this is, if it is cloned into Zephyr once, it will be available to all your Zephyr projects.
