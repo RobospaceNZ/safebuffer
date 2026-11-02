@@ -245,16 +245,129 @@ int safebuffer_snprintf(safebuffer_t *safebuffer, const char *msg, ...) {
     return 0;
 }
 
+// Number of bytes that can still be read. Users can change write_index directly, so it can be past the end.
+static uint32_t read_left(const safebuffer_t *safebuffer) {
+    uint32_t data_end = (safebuffer->write_index < safebuffer->len) ? safebuffer->write_index : safebuffer->len;
+
+    if (safebuffer->read_index >= data_end) {
+        return 0;
+    }
+    return data_end - safebuffer->read_index;
+}
+
 // Read a character from a safe buffer if available
 int safebuffer_read_char(safebuffer_t *safebuffer, uint8_t *c) {
-    if (safebuffer == NULL) {
+    if ((safebuffer == NULL) || (c == NULL)) {
         return -EFAULT;
     }
-    if (safebuffer->read_index >= safebuffer->write_index) {
-        // ReadIndex is not in buffer bounds
+    if (!read_left(safebuffer)) {
+        // No more data to read
         return -ENOSPC;
     }
     *c = safebuffer->buf[safebuffer->read_index++];
+    return 0;
+}
+
+// Read len bytes from a safe buffer. Nothing is read if fewer than len bytes are available.
+int safebuffer_read_data(safebuffer_t *safebuffer, void *data, uint32_t len) {
+    if (safebuffer == NULL) {
+        return -EFAULT;
+    }
+    if ((data == NULL) && len) {
+        return -EINVAL;
+    }
+    if (read_left(safebuffer) < len) {
+        return -ENOSPC;
+    }
+    memcpy(data, &safebuffer->buf[safebuffer->read_index], len);
+    safebuffer->read_index += len;
+    return 0;
+}
+
+// Get the next character without removing it, read_index is not changed
+int safebuffer_peek_char(const safebuffer_t *safebuffer, uint8_t *c) {
+    if ((safebuffer == NULL) || (c == NULL)) {
+        return -EFAULT;
+    }
+    if (!read_left(safebuffer)) {
+        return -ENOSPC;
+    }
+    *c = safebuffer->buf[safebuffer->read_index];
+    return 0;
+}
+
+// Skip len bytes without reading them. Nothing is skipped if fewer than len bytes are available.
+int safebuffer_skip(safebuffer_t *safebuffer, uint32_t len) {
+    if (safebuffer == NULL) {
+        return -EFAULT;
+    }
+    if (read_left(safebuffer) < len) {
+        return -ENOSPC;
+    }
+    safebuffer->read_index += len;
+    return 0;
+}
+
+// Get the number of bytes that have been written but not read yet
+uint32_t safebuffer_get_read_left_count(const safebuffer_t *safebuffer) {
+    if (safebuffer == NULL) {
+        return 0;
+    }
+    return read_left(safebuffer);
+}
+
+// Reserve len bytes at the end of the data and return a pointer to them, so they can be filled in later. For example
+// a header with the length and CRC of data that is added afterwards. write_index moves past the reserved bytes.
+// Return NULL if there is not enough space, then nothing is reserved and overflow is set.
+uint8_t *safebuffer_reserve(safebuffer_t *safebuffer, uint32_t len) {
+    uint8_t *p;
+
+    if ((safebuffer == NULL) || safebuffer->read_only) {
+        return NULL;
+    }
+    if (space_left(safebuffer) < len) {
+        safebuffer->overflow = true;
+        return NULL;
+    }
+    p = &safebuffer->buf[safebuffer->write_index];
+    safebuffer->write_index += len;
+    if (safebuffer->write_index >= safebuffer->len) {
+        safebuffer->full = true;
+    }
+    return p;
+}
+
+// Return true if no data was written to the buffer. A NULL safe buffer is treated as empty.
+bool safebuffer_is_empty(const safebuffer_t *safebuffer) {
+    return safebuffer_data_len(safebuffer) == 0;
+}
+
+// Get the number of bytes written to the buffer
+uint32_t safebuffer_data_len(const safebuffer_t *safebuffer) {
+    if (safebuffer == NULL) {
+        return 0;
+    }
+    return (safebuffer->write_index < safebuffer->len) ? safebuffer->write_index : safebuffer->len;
+}
+
+// Move the data that has not been read yet to the start of the buffer, to make space for more data. read_index
+// becomes 0. Useful for parsers that process part of the data and then receive more.
+int safebuffer_compact(safebuffer_t *safebuffer) {
+    uint32_t left;
+
+    if (safebuffer == NULL) {
+        return -EFAULT;
+    }
+    if (safebuffer->read_only) {
+        return -EACCES;
+    }
+    left = read_left(safebuffer);
+    if (left && safebuffer->read_index) {
+        memmove(safebuffer->buf, &safebuffer->buf[safebuffer->read_index], left);
+    }
+    safebuffer->write_index = left;
+    safebuffer->read_index = 0;
+    safebuffer->full = (left >= safebuffer->len);
     return 0;
 }
 

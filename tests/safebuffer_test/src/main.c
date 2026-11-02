@@ -260,4 +260,158 @@ ZTEST(safebuffer, test_safebuffer_init_const)
     zassert_equal(safebuffer_snprintf(&sb, "A"), -EACCES, "Adding to a read only buffer should fail");
 }
 
+ZTEST(safebuffer, test_safebuffer_read_data)
+{
+    safebuffer_t sb;
+    uint8_t buffer[8];
+    uint8_t out[4];
+    safebuffer_init(&sb, buffer, sizeof(buffer));
+    safebuffer_add_data(&sb, "ABCDE", 5);
+
+    zassert_equal(safebuffer_get_read_left_count(&sb), 5, "All the data should be left to read");
+    zassert_equal(safebuffer_read_data(&sb, out, 3), 0, "Reading 3 bytes should succeed");
+    zassert_equal(memcmp(out, "ABC", 3), 0, "The first 3 bytes should be read");
+    zassert_equal(sb.read_index, 3, "Read index should move past the data that was read");
+    zassert_equal(safebuffer_get_read_left_count(&sb), 2, "2 bytes should be left to read");
+
+    memset(out, 0, sizeof(out));
+    zassert_equal(safebuffer_read_data(&sb, out, 3), -ENOSPC, "Reading more than is left should fail");
+    zassert_equal(sb.read_index, 3, "Nothing should be read if not enough data is left");
+    zassert_equal(out[0], 0, "The output should not be changed if not enough data is left");
+    zassert_equal(safebuffer_read_data(&sb, out, 2), 0, "Reading exactly what is left should succeed");
+    zassert_equal(memcmp(out, "DE", 2), 0, "The last 2 bytes should be read");
+    zassert_equal(safebuffer_get_read_left_count(&sb), 0, "Nothing should be left to read");
+    zassert_equal(safebuffer_read_data(&sb, out, 0), 0, "Reading nothing is allowed");
+    zassert_equal(safebuffer_read_data(&sb, NULL, 1), -EINVAL, "NULL output should fail");
+}
+
+ZTEST(safebuffer, test_safebuffer_peek_and_skip)
+{
+    safebuffer_t sb;
+    uint8_t buffer[8];
+    uint8_t c;
+    safebuffer_init(&sb, buffer, sizeof(buffer));
+
+    zassert_equal(safebuffer_peek_char(&sb, &c), -ENOSPC, "Peeking an empty buffer should fail");
+    zassert_equal(safebuffer_skip(&sb, 1), -ENOSPC, "Skipping in an empty buffer should fail");
+    safebuffer_add_data(&sb, "ABCD", 4);
+
+    zassert_equal(safebuffer_peek_char(&sb, &c), 0, "Peek should succeed");
+    zassert_equal(c, 'A', "Peek should return the next character");
+    zassert_equal(sb.read_index, 0, "Peek must not change the read index");
+    zassert_equal(safebuffer_skip(&sb, 2), 0, "Skipping 2 bytes should succeed");
+    zassert_equal(safebuffer_peek_char(&sb, &c), 0, "Peek should succeed");
+    zassert_equal(c, 'C', "Peek should return the character after the skipped bytes");
+    zassert_equal(safebuffer_skip(&sb, 3), -ENOSPC, "Skipping more than is left should fail");
+    zassert_equal(sb.read_index, 2, "Nothing should be skipped if not enough data is left");
+    zassert_equal(safebuffer_skip(&sb, 2), 0, "Skipping exactly what is left should succeed");
+    zassert_equal(safebuffer_peek_char(&sb, &c), -ENOSPC, "Peek past the data should fail");
+}
+
+ZTEST(safebuffer, test_safebuffer_read_write_index_past_end)
+{
+    safebuffer_t sb;
+    uint8_t buffer[6];
+    uint8_t out[6];
+    safebuffer_init(&sb, buffer, sizeof(buffer) - 2);
+    memset(buffer, 0xAA, sizeof(buffer));
+
+    sb.write_index = sb.len + 2;    // Set past the end by the user
+    zassert_equal(safebuffer_data_len(&sb), 4, "Data length is limited to the buffer length");
+    zassert_equal(safebuffer_get_read_left_count(&sb), 4, "Only the buffer can be read");
+    zassert_equal(safebuffer_read_data(&sb, out, 5), -ENOSPC, "Reading past the end of the buffer should fail");
+    zassert_equal(safebuffer_read_data(&sb, out, 4), 0, "Reading the whole buffer should succeed");
+    zassert_equal(safebuffer_read_char(&sb, out), -ENOSPC, "Read char must not read past the end of the buffer");
+}
+
+ZTEST(safebuffer, test_safebuffer_reserve)
+{
+    safebuffer_t sb;
+    uint8_t buffer[9];
+    uint8_t *header;
+    safebuffer_init(&sb, buffer, sizeof(buffer) - 1);
+    memset(buffer, 0xAA, sizeof(buffer));
+
+    // Reserve a header, add the payload and then fill in the header
+    header = safebuffer_reserve(&sb, 2);
+    zassert_not_null(header, "Reserving 2 bytes should succeed");
+    zassert_equal(header, buffer, "The reserved bytes should be at the start of the buffer");
+    zassert_equal(sb.write_index, 2, "Write index should move past the reserved bytes");
+    zassert_equal(safebuffer_add_data(&sb, "XYZ", 3), 0, "Adding the payload should succeed");
+    header[0] = 'L';
+    header[1] = '3';
+    zassert_equal(memcmp(buffer, "L3XYZ", 5), 0, "The header should be before the payload");
+
+    header = safebuffer_reserve(&sb, 3);
+    zassert_not_null(header, "Reserving the rest of the buffer should succeed");
+    zassert_equal(header, &buffer[5], "The reserved bytes should be after the existing data");
+    zassert_true(sb.full, "Buffer should be full after reserving the rest");
+    zassert_false(sb.overflow, "Nothing was lost");
+    zassert_is_null(safebuffer_reserve(&sb, 1), "Reserving in a full buffer should fail");
+    zassert_true(sb.overflow, "Overflow should be set when reserving fails");
+    zassert_equal(sb.write_index, 8, "Write index should not change when reserving fails");
+    zassert_not_null(safebuffer_reserve(&sb, 0), "Reserving nothing is allowed");
+    zassert_equal(buffer[8], 0xAA, "Buffer should not have been modified past its end");
+
+    static const uint8_t data[] = {1};
+    safebuffer_init_const(&sb, data, sizeof(data));
+    zassert_is_null(safebuffer_reserve(&sb, 0), "Reserving in a read only buffer should fail");
+}
+
+ZTEST(safebuffer, test_safebuffer_is_empty_and_data_len)
+{
+    safebuffer_t sb;
+    uint8_t buffer[4];
+    uint8_t c;
+    safebuffer_init(&sb, buffer, sizeof(buffer));
+
+    zassert_true(safebuffer_is_empty(&sb), "A new buffer should be empty");
+    zassert_equal(safebuffer_data_len(&sb), 0, "A new buffer has no data");
+    safebuffer_add_data(&sb, "AB", 2);
+    zassert_false(safebuffer_is_empty(&sb), "Buffer with data should not be empty");
+    zassert_equal(safebuffer_data_len(&sb), 2, "Data length should be 2");
+    safebuffer_read_char(&sb, &c);
+    zassert_equal(safebuffer_data_len(&sb), 2, "Reading does not change the data length");
+    safebuffer_reset(&sb);
+    zassert_true(safebuffer_is_empty(&sb), "Buffer should be empty after reset");
+    zassert_true(safebuffer_is_empty(NULL), "NULL is treated as empty");
+    zassert_equal(safebuffer_data_len(NULL), 0, "NULL has no data");
+}
+
+ZTEST(safebuffer, test_safebuffer_compact)
+{
+    safebuffer_t sb;
+    uint8_t buffer[6];
+    uint8_t c;
+    safebuffer_init(&sb, buffer, sizeof(buffer));
+
+    safebuffer_add_data(&sb, "ABCDEF", 6);
+    zassert_true(sb.full, "Buffer should be full");
+    safebuffer_skip(&sb, 4);
+    zassert_equal(safebuffer_compact(&sb), 0, "Compact should succeed");
+    zassert_equal(sb.read_index, 0, "Read index should be 0 after compact");
+    zassert_equal(sb.write_index, 2, "Only the unread data should be left");
+    zassert_false(sb.full, "Buffer should have space after compact");
+    zassert_equal(memcmp(buffer, "EF", 2), 0, "Unread data should be moved to the start");
+    zassert_equal(safebuffer_add_data(&sb, "GHIJ", 4), 0, "The space should be available again");
+    zassert_equal(memcmp(buffer, "EFGHIJ", 6), 0, "New data should follow the unread data");
+    zassert_equal(safebuffer_read_char(&sb, &c), 0, "Read should succeed");
+    zassert_equal(c, 'E', "Reading should continue with the unread data");
+
+    // Compact when everything was read empties the buffer
+    safebuffer_skip(&sb, 5);
+    zassert_equal(safebuffer_compact(&sb), 0, "Compact should succeed");
+    zassert_true(safebuffer_is_empty(&sb), "Buffer should be empty if everything was read");
+
+    // Nothing read yet, data stays where it is
+    safebuffer_add_data(&sb, "AB", 2);
+    zassert_equal(safebuffer_compact(&sb), 0, "Compact should succeed");
+    zassert_equal(sb.write_index, 2, "Data should stay when nothing was read");
+    zassert_equal(memcmp(buffer, "AB", 2), 0, "Data should not move when nothing was read");
+
+    static const uint8_t data[] = {1, 2};
+    safebuffer_init_const(&sb, data, sizeof(data));
+    zassert_equal(safebuffer_compact(&sb), -EACCES, "Compacting a read only buffer should fail");
+}
+
 ZTEST_SUITE(safebuffer, NULL, NULL, NULL, NULL, NULL);

@@ -38,6 +38,46 @@ left.
 added overwrites it. A message of n characters therefore needs n + 1 bytes of space. If the message is cut short,
 -ENOMEM is returned and the terminating zero is in the last byte of the buffer.
 
+### Reading
+
+Data is read from `read_index` up to `write_index`. The read functions return -ENOSPC if not enough data is left, then
+nothing is read.
+```
+uint8_t type;
+uint8_t payload[16];
+
+safebuffer_read_char(&sb, &type);                       // Read one byte
+safebuffer_peek_char(&sb, &type);                       // Look at the next byte without reading it
+safebuffer_skip(&sb, 2);                                // Skip 2 bytes
+safebuffer_read_data(&sb, payload, sizeof(payload));    // Read 16 bytes, or nothing if fewer are left
+safebuffer_get_read_left_count(&sb);                    // Number of bytes not read yet
+```
+
+`safebuffer_compact` moves the data that has not been read yet to the start of the buffer and sets `read_index` to 0.
+This makes space for more data, for example in a parser that processes part of the data and then receives more.
+
+### Reserving space
+
+`safebuffer_reserve` reserves bytes at the end of the data and returns a pointer to them, so they can be filled in
+after the rest of the data was added. For example a header with the length of the payload:
+```
+uint8_t *header = safebuffer_reserve(&sb, 2);
+
+if (header) {
+    safebuffer_add_data(&sb, payload, payload_len);
+    header[0] = payload_len >> 8;
+    header[1] = payload_len & 0xFF;
+}
+```
+NULL is returned if there is not enough space, then nothing is reserved and `overflow` is set.
+
+### Other functions
+
+`safebuffer_data_len` returns the number of bytes written to the buffer and `safebuffer_is_empty` returns true if
+nothing was written. Use these instead of reading `write_index` directly.
+
+### Read only buffers
+
 A buffer initialised with `safebuffer_init_const` is read only. The add functions return -EACCES and
 `safebuffer_reset` only resets `read_index`.
 
@@ -53,6 +93,9 @@ V2.0.0 is not backwards compatible with V1.x:
   It no longer clears `overflow`.
 - `safebuffer_snprintf` has a printf format attribute, the compiler now warns about format strings that don't match
   their arguments.
+
+New functions: `safebuffer_read_data`, `safebuffer_peek_char`, `safebuffer_skip`, `safebuffer_get_read_left_count`,
+`safebuffer_reserve`, `safebuffer_is_empty`, `safebuffer_data_len` and `safebuffer_compact`.
 
 ## Import into Zephyr
 
