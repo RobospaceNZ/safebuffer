@@ -83,6 +83,11 @@ A buffer initialised with `safebuffer_init_const` is read only. The add function
 
 The functions are not thread safe. If a safebuffer is used by more than one thread, the caller must protect it.
 
+### Changes in V2.1.0
+
+safebuffer is now a Zephyr module, see [Import into Zephyr](#import-into-zephyr). Enable it with
+`CONFIG_SAFEBUFFER=y` and remove the `add_subdirectory` lines from your CMakeLists.txt. There are no changes to the code.
+
 ### Changes in V2.0.0
 
 V2.0.0 is not backwards compatible with V1.x:
@@ -99,38 +104,43 @@ New functions: `safebuffer_read_data`, `safebuffer_peek_char`, `safebuffer_skip`
 
 ## Import into Zephyr
 
-This code can be cloned as part of the user's code, but can also be cloned into your Zephyr library. The advantage of this is, if it is cloned into Zephyr once, it will be available to all your Zephyr projects.
-
-For the examples below, we are assuming Nordic NCS 2.9.0. Please adjust to your version.
-
-If you are using Nordic's NCS, open west.yml located at:<br>
-C:\ncs\v2.9.0\nrf\west.yml
-
-Under remotes, add:
+safebuffer is a Zephyr module (see zephyr/module.yml), so Zephyr finds it by itself once it is in the west workspace or
+listed in `ZEPHYR_EXTRA_MODULES`. No changes to CMakeLists.txt or Kconfig are needed, enable it in prj.conf:
 ```
-    - name: safebuffer
+CONFIG_SAFEBUFFER=y
+```
+
+### Workspace application
+
+If your application has its own west.yml (a workspace application, for example one started from Nordic's
+ncs-example-application), add the library to that west.yml. Don't edit the west.yml of the SDK (nrf/west.yml), the
+change is lost when the SDK is updated and is not part of your project.
+
+Under remotes, add (once for all Robospace libraries):
+```
+    - name: robospace
       url-base: https://github.com/RobospaceNZ
 ```
 
 Under projects, add:
 ```
     - name: safebuffer
-      remote: safebuffer
-      revision: V2.0.0
+      remote: robospace
+      revision: V2.1.0
       path: modules/lib/safebuffer
 ```
 
-Open command prompt in C:\ncs\v2.9.0. Remember to update b620d30767 if you use a different NCS (See C:\ncs\toolchains\toolchains.json for the version codes). Run the following:
+Then run `west update` in the workspace folder.
+
+### Freestanding application
+
+If your application uses an SDK installed under C:\ncs, add the library to your application, for example as a git
+submodule:
 ```
-SET PATH=C:\ncs\toolchains\b620d30767\opt\bin;C:\ncs\toolchains\b620d30767\opt\bin\Scripts;%PATH%
-west update
+git submodule add https://github.com/RobospaceNZ/safebuffer libs/safebuffer
 ```
 
-The safe buffer code will be located at:<br>
-C:\ncs\v2.9.0\modules\lib\safebuffer
-
-Add the following to your CMakeLists.txt file:
+Add the following to your CMakeLists.txt file, before `find_package(Zephyr ...)`:
 ```
-set(SAFEBUFFER_SRC ${ZEPHYR_BASE}/../modules/lib/safebuffer)
-add_subdirectory(${SAFEBUFFER_SRC} ${CMAKE_BINARY_DIR}/safebuffer_build)
+list(APPEND ZEPHYR_EXTRA_MODULES ${CMAKE_CURRENT_SOURCE_DIR}/libs/safebuffer)
 ```

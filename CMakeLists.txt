@@ -4,5 +4,8 @@
 # SPDX-License-Identifier: MIT
 #
 
-target_include_directories(app PRIVATE .)
-target_sources(app PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/safebuffer.c)
+if(CONFIG_SAFEBUFFER)
+  zephyr_library_named(safebuffer)
+  zephyr_library_sources(safebuffer.c)
+  zephyr_include_directories(.)
+endif()

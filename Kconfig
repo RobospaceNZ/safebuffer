@@ -1,0 +1,11 @@
+#
+# Copyright (c) 2025 Hubert Jetschko
+#
+# SPDX-License-Identifier: MIT
+#
+
+config SAFEBUFFER
+	bool "Safe buffer"
+	help
+	  Buffer with functions that cannot overflow it. safebuffer_malloc allocates from the
+	  Zephyr heap, set CONFIG_HEAP_MEM_POOL_SIZE if it is used.
