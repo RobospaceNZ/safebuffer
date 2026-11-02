@@ -30,6 +30,14 @@
 #include <errno.h>
 #include "safebuffer.h"
 
+// Number of bytes that can still be written. Users can change write_index directly, so it can be past the end.
+static uint32_t space_left(const safebuffer_t *safebuffer) {
+    if (safebuffer->write_index >= safebuffer->len) {
+        return 0;
+    }
+    return safebuffer->len - safebuffer->write_index;
+}
+
 int safebuffer_init(safebuffer_t *safebuffer, uint8_t *buf, uint32_t len) {
     if (safebuffer == NULL) {
         return -EFAULT;
@@ -38,12 +46,13 @@ int safebuffer_init(safebuffer_t *safebuffer, uint8_t *buf, uint32_t len) {
     safebuffer->len = len;
     safebuffer->full = false;
     safebuffer->overflow = false;
+    safebuffer->read_only = false;
     safebuffer->write_index = 0;
     safebuffer->read_index = 0;
     return 0;
 }
 
-// Initialise a safe buffer to point to a constant buffer
+// Initialise a safe buffer to point to a constant buffer. The buffer is read only, data can't be added to it.
 int safebuffer_init_const(safebuffer_t *safebuffer, const uint8_t *buf, uint32_t len)
 {
     if (safebuffer == NULL) {
@@ -56,13 +65,14 @@ int safebuffer_init_const(safebuffer_t *safebuffer, const uint8_t *buf, uint32_t
     safebuffer->len = len;
     safebuffer->full = true;
     safebuffer->overflow = false;
+    safebuffer->read_only = true;
     safebuffer->write_index = len;
     safebuffer->read_index = 0;
     return 0;
 }
 
 // Add data to a safe buffer. Return 0 if all data could be added
-int safebuffer_add_data(safebuffer_t *safebuffer, uint8_t *data, uint32_t len)
+int safebuffer_add_data(safebuffer_t *safebuffer, const void *data, uint32_t len)
 {
     uint32_t size_left;
     bool all_data_added = true;
@@ -70,7 +80,13 @@ int safebuffer_add_data(safebuffer_t *safebuffer, uint8_t *data, uint32_t len)
     if (safebuffer == NULL) {
         return -EFAULT;
     }
-    size_left = safebuffer->len - safebuffer->write_index;
+    if (safebuffer->read_only) {
+        return -EACCES;
+    }
+    if ((data == NULL) && len) {
+        return -EINVAL;
+    }
+    size_left = space_left(safebuffer);
     if (size_left < len) {
         // Not all the data will fit in the buffer
         all_data_added = false;
@@ -90,29 +106,42 @@ int safebuffer_add_data(safebuffer_t *safebuffer, uint8_t *data, uint32_t len)
 }
 
 // Add data to a safe buffer from another safe buffer
-int safebuffer_add_safebuffer(safebuffer_t *safebuffer, safebuffer_t *safebuffer_in) {
-  return safebuffer_add_data(safebuffer, safebuffer_in->buf, safebuffer_in->write_index);
+int safebuffer_add_safebuffer(safebuffer_t *safebuffer, const safebuffer_t *safebuffer_in) {
+    uint32_t len;
+
+    if (safebuffer_in == NULL) {
+        return -EFAULT;
+    }
+    // Don't copy past the end of the input buffer if its write_index was changed directly
+    len = (safebuffer_in->write_index < safebuffer_in->len) ? safebuffer_in->write_index : safebuffer_in->len;
+    return safebuffer_add_data(safebuffer, safebuffer_in->buf, len);
 }
 
-// Add a zero terminated string to a safe buffer
-int safebuffer_add_string(safebuffer_t *safebuffer, uint8_t *p_str) {
+// Add a zero terminated string to a safe buffer, the terminating zero is not added
+int safebuffer_add_string(safebuffer_t *safebuffer, const char *str) {
     uint32_t size_left;
     bool all_data_added = true;
 
     if (safebuffer == NULL) {
         return -EFAULT;
     }
-    size_left = safebuffer->len - safebuffer->write_index;
-    while (*p_str != 0) {
+    if (safebuffer->read_only) {
+        return -EACCES;
+    }
+    if (str == NULL) {
+        return -EINVAL;
+    }
+    size_left = space_left(safebuffer);
+    while (*str != 0) {
         if(size_left) {
             size_left--;
-            safebuffer->buf[safebuffer->write_index++] = *p_str;
+            safebuffer->buf[safebuffer->write_index++] = (uint8_t)*str;
         } else {
             safebuffer->overflow = true;
             all_data_added = false;
             break;
         }
-        p_str++;
+        str++;
     }
     if (!size_left) {
         safebuffer->full = true;
@@ -132,7 +161,10 @@ int safebuffer_add_char(safebuffer_t *safebuffer, uint8_t c) {
     if (safebuffer == NULL) {
         return -EFAULT;
     }
-    size_left = safebuffer->len - safebuffer->write_index;
+    if (safebuffer->read_only) {
+        return -EACCES;
+    }
+    size_left = space_left(safebuffer);
     if (!size_left) {
         //character will not fit in buffer
         all_data_added = false;
@@ -151,50 +183,66 @@ int safebuffer_add_char(safebuffer_t *safebuffer, uint8_t c) {
 }
 
 // Get the number of bytes still left in buffer
-uint32_t safebuffer_get_data_left_count(safebuffer_t *safebuffer) {
-    uint32_t size_left = 0;
-
+uint32_t safebuffer_get_data_left_count(const safebuffer_t *safebuffer) {
     if (safebuffer == NULL) {
-        return size_left;
+        return 0;
     }
-    size_left = safebuffer->len - safebuffer->write_index;
-    return size_left;
+    return space_left(safebuffer);
 }
 
-// Write a printf style message to a safe buffer
-int safebuffer_snprintf(safebuffer_t *safebuffer, const char* msg, ...) {
+// Write a printf style message to a safe buffer. A terminating zero is written after the message, write_index points
+// to it so the next data added overwrites it. The terminating zero needs a byte, so a message of n characters needs
+// n + 1 bytes of space.
+// Return 0 if the whole message was added, -ENOMEM if it was cut short. Then the buffer is full, it holds as much of
+// the message as fits with the terminating zero in the last byte.
+int safebuffer_snprintf(safebuffer_t *safebuffer, const char *msg, ...) {
     va_list args;
-    int32_t wsize;
+    int wsize;
     char *c;
-    uint32_t size_left = 0;
-    int error = 0;
+    uint32_t size_left;
 
     if (safebuffer == NULL) {
         return -EFAULT;
     }
-    size_left = safebuffer->len - safebuffer->write_index;
+    if (safebuffer->read_only) {
+        return -EACCES;
+    }
+    if (msg == NULL) {
+        return -EINVAL;
+    }
+    size_left = space_left(safebuffer);
     va_start (args, msg);
+    if (!size_left) {
+        // No space left, not even for the terminating zero. Only check if the message would have added characters.
+        wsize = vsnprintf(NULL, 0, msg, args);
+        va_end (args);
+        if (wsize < 0) {
+            return -EINVAL;
+        }
+        if (wsize > 0) {
+            safebuffer->overflow = true;
+            return -ENOMEM;
+        }
+        return 0;
+    }
     c = (char*)&safebuffer->buf[safebuffer->write_index];
     wsize = vsnprintf(c, size_left, msg, args);
     va_end (args);
-    if (wsize > size_left) {
-        // Not all the data was written
+    if (wsize < 0) {
+        // Formatting error, nothing was added
+        *c = 0;
+        return -EINVAL;
+    }
+    if ((uint32_t)wsize >= size_left) {
+        // Not all the message was written, vsnprintf wrote size_left - 1 characters and the terminating zero
         safebuffer->write_index = safebuffer->len;
         safebuffer->overflow = true;
         safebuffer->full = true;
-        error = -ENOMEM;
-    } else if (wsize == size_left) {
-        // Buffer was exactly the correct size
-        safebuffer->write_index = safebuffer->len;
-        safebuffer->overflow = false;
-        safebuffer->full = true;
-    } else {
-        // Buffer still have space left
-        safebuffer->write_index += wsize;  // Point to terminating zero so it can be overwritten
-        safebuffer->overflow = false;
-        safebuffer->full = false;
+        return -ENOMEM;
     }
-    return error;
+    // All the message was written. Overflow is not cleared, so an earlier loss of data is not hidden.
+    safebuffer->write_index += wsize;  // Point to terminating zero so it can be overwritten
+    return 0;
 }
 
 // Read a character from a safe buffer if available
@@ -210,10 +258,15 @@ int safebuffer_read_char(safebuffer_t *safebuffer, uint8_t *c) {
     return 0;
 }
 
-// Reset all the variables for a safe buffer so it is empty
+// Reset all the variables for a safe buffer so it is empty. A read only buffer keeps its data, only reading starts
+// from the beginning again.
 int safebuffer_reset(safebuffer_t *safebuffer) {
     if (safebuffer == NULL) {
         return -EFAULT;
+    }
+    if (safebuffer->read_only) {
+        safebuffer->read_index = 0;
+        return 0;
     }
     safebuffer->full = false;
     safebuffer->overflow = false;

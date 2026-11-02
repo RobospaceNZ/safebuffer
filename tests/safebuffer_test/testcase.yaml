@@ -1,6 +1,9 @@
 tests:
   safebuffer.test:
-    platform_allow: nrf52840dk/nrf52840
+    # native_sim runs the tests on a Linux host without hardware, for example in CI
+    platform_allow:
+      - nrf52840dk/nrf52840
+      - native_sim
     tags: safebuffer
     harness: ztest
     timeout: 300

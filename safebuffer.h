@@ -26,7 +26,12 @@
 #ifndef SAFEBUFFER_H_
 #define SAFEBUFFER_H_
 
-#include "stdbool.h"
+#include <stdint.h>
+#include <stdbool.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 typedef struct
 {
@@ -35,21 +40,26 @@ typedef struct
   uint32_t write_index;         // Points to the end of the data currently in buffer
   uint32_t read_index;          // This can be used by the user for reading from the buffer
   bool full;                    // True if the buffer is full
-  bool overflow;                // True if data written to the buffer was lost
+  bool overflow;                // True if data written to the buffer was lost. Stays set until the buffer is reset
+  bool read_only;               // True if initialised with safebuffer_init_const, data can't be added
 }
 safebuffer_t;
 
 int safebuffer_init(safebuffer_t *safebuffer, uint8_t *buf, uint32_t len);
 int safebuffer_init_const(safebuffer_t *safebuffer, const uint8_t *buf, uint32_t len);
-int safebuffer_add_data(safebuffer_t *safebuffer, uint8_t *data, uint32_t len);
-int safebuffer_add_safebuffer(safebuffer_t *safebuffer, safebuffer_t *safebuffer_in);
-int safebuffer_add_string(safebuffer_t *safebuffer, uint8_t *p_str);
+int safebuffer_add_data(safebuffer_t *safebuffer, const void *data, uint32_t len);
+int safebuffer_add_safebuffer(safebuffer_t *safebuffer, const safebuffer_t *safebuffer_in);
+int safebuffer_add_string(safebuffer_t *safebuffer, const char *str);
 int safebuffer_add_char(safebuffer_t *safebuffer, uint8_t c);
-uint32_t safebuffer_get_data_left_count(safebuffer_t *safebuffer);
-int safebuffer_snprintf(safebuffer_t *safebuffer, const char* msg, ...);
+uint32_t safebuffer_get_data_left_count(const safebuffer_t *safebuffer);
+int safebuffer_snprintf(safebuffer_t *safebuffer, const char *msg, ...) __attribute__((format(printf, 2, 3)));
 int safebuffer_read_char(safebuffer_t *safebuffer, uint8_t *c);
 int safebuffer_reset(safebuffer_t *safebuffer);
 safebuffer_t *safebuffer_malloc(uint32_t len);
 int safebuffer_free(safebuffer_t *safebuffer);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* SAFEBUFFER_H_ */

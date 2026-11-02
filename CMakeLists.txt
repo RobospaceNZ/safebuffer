@@ -1,7 +1,7 @@
 #
-# Copyright (c) 2021 Nordic Semiconductor ASA
+# Copyright (c) 2025 Hubert Jetschko
 #
-# SPDX-License-Identifier: LicenseRef-Nordic-5-Clause
+# SPDX-License-Identifier: MIT
 #
 
 target_include_directories(app PRIVATE .)
